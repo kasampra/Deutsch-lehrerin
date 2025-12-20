@@ -24,8 +24,10 @@ const App: React.FC = () => {
   const timerRef = useRef<number | null>(null);
 
   // Initialize Client
-  useEffect(() => {
-    const apiKey = process.env.API_KEY;
+    const apiKeyRef = useRef<string | undefined>(import.meta.env.VITE_GEMINI_API_KEY as string | undefined);
+
+    useEffect(() => {
+        const apiKey = apiKeyRef.current;
     if (apiKey) {
       liveClientRef.current = new LiveClient(apiKey, {
         onStateChange: setConnectionState,
@@ -89,7 +91,7 @@ const App: React.FC = () => {
     if (transcripts.length > 2) {
         setIsGeneratingFeedback(true);
         try {
-            const apiKey = process.env.API_KEY;
+            const apiKey = apiKeyRef.current;
             if (apiKey) {
                 const report = await generateFeedback(apiKey, transcripts);
                 setFeedbackReport(report);

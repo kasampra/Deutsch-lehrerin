@@ -43,9 +43,9 @@
 
 3.  Configure your API Key:
     *   Create a file named `.env` in the root directory.
-    *   Add your API key:
+    *   Vite only exposes variables prefixed with `VITE_`, so add your key like this:
         ```env
-        API_KEY=your_actual_api_key_here
+        VITE_GEMINI_API_KEY=your_actual_api_key_here
         ```
 
 ### Running the App
