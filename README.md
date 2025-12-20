@@ -32,7 +32,7 @@
 
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/kasampra/deutsch-lehrerin.git
+    git clone https://github.com/yourusername/deutsch-daily.git
     cd deutsch-daily
     ```
 
@@ -45,7 +45,7 @@
     *   Create a file named `.env` in the root directory.
     *   Add your API key:
         ```env
-        VITE_API_KEY=your_actual_api_key_here
+        API_KEY=your_actual_api_key_here
         ```
 
 ### Running the App

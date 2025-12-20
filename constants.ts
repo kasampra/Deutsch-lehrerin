@@ -15,4 +15,4 @@ Key behaviors:
 Start the conversation by warmly welcoming the student and asking how their day was.
 `;
 
-export const VOICE_NAME = 'Fenrir'; // Deep, calm voice often good for authority/teaching
+export const VOICE_NAME = 'Kore'; // Warm, female voice
