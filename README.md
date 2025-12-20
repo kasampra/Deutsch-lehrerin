@@ -32,7 +32,7 @@
 
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/kasampra/deutsch-daily.git
+    git clone https://github.com/kasampra/deutsch-lehrerin.git
     cd deutsch-daily
     ```
 
