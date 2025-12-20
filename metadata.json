@@ -1,0 +1,7 @@
+{
+  "name": "Deutsch Daily - AI German Tutor",
+  "description": "A compassionate AI German teacher for daily 15-minute conversation practice using Gemini Live API.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
