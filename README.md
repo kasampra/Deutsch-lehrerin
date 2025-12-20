@@ -2,7 +2,7 @@
 
 **Deutsch Daily** is a compassionate, AI-powered German teacher designed to help you practice speaking German for 15 minutes every day. Built with React and the Google Gemini Live API, it provides a real-time, low-latency voice conversation experience with an empathetic persona named "Frau Müller".
 
-![Deutsch Daily Screenshot](https://via.placeholder.com/800x400?text=Deutsch+Daily+UI)
+![Deutsch Daily Banner](https://images.unsplash.com/photo-1467269204594-9661b134dd2b?auto=format&fit=crop&w=1200&q=80)
 
 ## 🌟 Features
 
@@ -32,7 +32,7 @@
 
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/yourusername/deutsch-daily.git
+    git clone https://github.com/kasampra/deutsch-daily.git
     cd deutsch-daily
     ```
 
