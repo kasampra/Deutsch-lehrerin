@@ -45,7 +45,7 @@
     *   Create a file named `.env` in the root directory.
     *   Add your API key:
         ```env
-        API_KEY=your_actual_api_key_here
+        VITE_API_KEY=your_actual_api_key_here
         ```
 
 ### Running the App
