@@ -1,27 +1,45 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { FeedbackReport, TranscriptionItem } from "../types";
+import { FeedbackReport, TranscriptionItem, Language } from "../types";
 
-export async function generateFeedback(apiKey: string, history: TranscriptionItem[]): Promise<FeedbackReport> {
+export async function generateFeedback(apiKey: string, history: TranscriptionItem[], language: Language = Language.GERMAN): Promise<FeedbackReport> {
   const ai = new GoogleGenAI({ apiKey });
 
   const conversationText = history
     .map((item) => `${item.speaker.toUpperCase()}: ${item.text}`)
     .join("\n");
 
-  const prompt = `
-    You are an expert German language tutor. Analyze the following conversation transcript between a student (USER) and a teacher (AI).
-    
-    Provide a structured assessment of the student's German skills.
-    Focus on:
-    1. Grammar: Correct usage of cases, verb conjugations, sentence structure (Satzbau).
-    2. Vocabulary: Variety, appropriateness, use of specific terms.
-    3. Pronunciation: Infer likely pronunciation issues based on the text (e.g. if the transcript shows phonetically incorrect words) or general advice for their level. *Note: Since this is text-based, focus on general pronunciation advice for the words they used.*
-    
-    Provide a score (1-10), strengths, areas for improvement, and specifically actionable advice for next steps.
-    
-    TRANSCRIPT:
-    ${conversationText}
-  `;
+  const prompts = {
+    [Language.GERMAN]: `
+      You are an expert German language tutor. Analyze the following conversation transcript between a student (USER) and a teacher (AI).
+      
+      Provide a structured assessment of the student's German skills.
+      Focus on:
+      1. Grammar: Correct usage of cases, verb conjugations, sentence structure (Satzbau).
+      2. Vocabulary: Variety, appropriateness, use of specific terms.
+      3. Pronunciation: Infer likely pronunciation issues based on the text (e.g. if the transcript shows phonetically incorrect words) or general advice for their level. *Note: Since this is text-based, focus on general pronunciation advice for the words they used.*
+      
+      Provide a score (1-10), strengths, areas for improvement, and specifically actionable advice for next steps.
+      
+      TRANSCRIPT:
+      ${conversationText}
+    `,
+    [Language.ENGLISH]: `
+      You are an expert English language tutor. Analyze the following conversation transcript between a student (USER) and a teacher (AI).
+      
+      Provide a structured assessment of the student's English skills.
+      Focus on:
+      1. Grammar: Correct usage of tenses, subject-verb agreement, article usage, sentence structure.
+      2. Vocabulary: Range, appropriateness, idiomatic expressions, word choice.
+      3. Pronunciation: Infer likely pronunciation issues based on the text (e.g. if the transcript shows phonetically incorrect words) or general advice for their level. *Note: Since this is text-based, focus on general pronunciation advice for the words they used.*
+      
+      Provide a score (1-10), strengths, areas for improvement, and specifically actionable advice for next steps.
+      
+      TRANSCRIPT:
+      ${conversationText}
+    `,
+  };
+
+  const prompt = prompts[language];
 
   const categorySchema = {
     type: Type.OBJECT,

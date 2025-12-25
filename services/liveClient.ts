@@ -1,6 +1,5 @@
 import { GoogleGenAI, LiveServerMessage, Modality } from "@google/genai";
 import { ConnectionState, TranscriptionItem } from "../types";
-import { SYSTEM_INSTRUCTION, VOICE_NAME } from "../constants";
 import { createPcmBlob, decodeAudioData, base64ToUint8Array } from "../utils/audioUtils";
 
 // Audio configuration
@@ -35,6 +34,8 @@ export class LiveClient {
 
   constructor(
     apiKey: string, 
+    private systemInstruction: string,
+    private voiceName: string,
     callbacks: {
       onStateChange: (state: ConnectionState) => void;
       onTranscription: (item: TranscriptionItem) => void;
@@ -68,9 +69,9 @@ export class LiveClient {
         model: 'gemini-2.5-flash-native-audio-preview-09-2025',
         config: {
           responseModalities: [Modality.AUDIO],
-          systemInstruction: SYSTEM_INSTRUCTION,
+          systemInstruction: this.systemInstruction,
           speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: VOICE_NAME } },
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: this.voiceName } },
           },
           inputAudioTranscription: {},
           outputAudioTranscription: {},

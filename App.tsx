@@ -1,14 +1,40 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ConnectionState, TranscriptionItem, FeedbackReport } from './types';
+import { ConnectionState, TranscriptionItem, FeedbackReport, Language, LanguageConfig } from './types';
 import { LiveClient } from './services/liveClient';
 import { generateFeedback } from './services/feedbackService';
+import { GERMAN_SYSTEM_INSTRUCTION, GERMAN_VOICE_NAME, ENGLISH_SYSTEM_INSTRUCTION, ENGLISH_VOICE_NAME } from './constants';
 import Visualizer from './components/Visualizer';
 import Transcript from './components/Transcript';
 import FeedbackReportView from './components/FeedbackReport';
+import LanguageSelector from './components/LanguageSelector';
 
 const SESSION_DURATION_SECONDS = 15 * 60; // 15 minutes
 
+const LANGUAGE_CONFIGS: Record<Language, LanguageConfig> = {
+  [Language.GERMAN]: {
+    code: Language.GERMAN,
+    name: 'German',
+    flag: '🇩🇪',
+    teacherName: 'Frau Müller',
+    systemInstruction: GERMAN_SYSTEM_INSTRUCTION,
+    voiceName: GERMAN_VOICE_NAME,
+    primaryColor: '#EF4444',
+    secondaryColor: '#FBBF24',
+  },
+  [Language.ENGLISH]: {
+    code: Language.ENGLISH,
+    name: 'English',
+    flag: '🇬🇧',
+    teacherName: 'Mr. Williams',
+    systemInstruction: ENGLISH_SYSTEM_INSTRUCTION,
+    voiceName: ENGLISH_VOICE_NAME,
+    primaryColor: '#3B82F6',
+    secondaryColor: '#8B5CF6',
+  },
+};
+
 const App: React.FC = () => {
+  const [selectedLanguage, setSelectedLanguage] = useState<LanguageConfig>(LANGUAGE_CONFIGS[Language.GERMAN]);
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.DISCONNECTED);
   const [transcripts, setTranscripts] = useState<TranscriptionItem[]>([]);
   const [userVolume, setUserVolume] = useState(0);
@@ -29,7 +55,11 @@ const App: React.FC = () => {
     useEffect(() => {
         const apiKey = apiKeyRef.current;
     if (apiKey) {
-      liveClientRef.current = new LiveClient(apiKey, {
+      liveClientRef.current = new LiveClient(
+        apiKey,
+        selectedLanguage.systemInstruction,
+        selectedLanguage.voiceName,
+        {
         onStateChange: setConnectionState,
         onTranscription: handleTranscriptionUpdate,
         onAudioLevel: (level, source) => {
@@ -42,7 +72,7 @@ const App: React.FC = () => {
       liveClientRef.current?.disconnect();
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, []);
+  }, [selectedLanguage]);
 
   // Timer Logic
   useEffect(() => {
@@ -93,7 +123,7 @@ const App: React.FC = () => {
         try {
             const apiKey = apiKeyRef.current;
             if (apiKey) {
-                const report = await generateFeedback(apiKey, transcripts);
+                const report = await generateFeedback(apiKey, transcripts, selectedLanguage.code);
                 setFeedbackReport(report);
             }
         } catch (error) {
@@ -124,8 +154,10 @@ const App: React.FC = () => {
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
             <div className="flex items-center space-x-2">
-                <span className="text-2xl">🇩🇪</span>
-                <h1 className="text-xl font-bold tracking-tight text-gray-900">Deutsch Daily</h1>
+                <span className="text-2xl">{selectedLanguage.flag}</span>
+                <h1 className="text-xl font-bold tracking-tight text-gray-900">
+                  {selectedLanguage.name === 'German' ? 'Deutsch Daily' : 'English Express'}
+                </h1>
             </div>
             
             {/* Timer Display */}
@@ -138,8 +170,13 @@ const App: React.FC = () => {
         </div>
         <div className="h-1 bg-gray-100 w-full">
             <div 
-                className="h-full bg-gradient-to-r from-yellow-400 via-red-500 to-black transition-all duration-1000 ease-linear"
-                style={{ width: `${progressPercentage}%` }}
+                className="h-full transition-all duration-1000 ease-linear"
+                style={{ 
+                  width: `${progressPercentage}%`,
+                  background: selectedLanguage.code === Language.GERMAN 
+                    ? 'linear-gradient(to right, #FBBF24, #EF4444, #000000)'
+                    : 'linear-gradient(to right, #3B82F6, #8B5CF6, #EC4899)'
+                }}
             />
         </div>
       </header>
@@ -156,6 +193,18 @@ const App: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                      {/* Left Column: Visuals & Controls */}
                     <div className="md:col-span-7 space-y-6">
+                        {/* Language Selector */}
+                        {connectionState === ConnectionState.DISCONNECTED && (
+                          <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6">
+                            <h2 className="text-lg font-bold text-center mb-4 text-gray-900">Choose Your Language</h2>
+                            <LanguageSelector 
+                              selected={selectedLanguage}
+                              onSelect={setSelectedLanguage}
+                              disabled={connectionState !== ConnectionState.DISCONNECTED}
+                            />
+                          </div>
+                        )}
+                        
                         <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8 flex flex-col items-center justify-center min-h-[400px] relative overflow-hidden">
                             <div className="absolute inset-0 bg-gradient-to-b from-gray-50/50 to-transparent pointer-events-none"></div>
                             
@@ -163,14 +212,14 @@ const App: React.FC = () => {
                                 <Visualizer 
                                     isActive={connectionState === ConnectionState.CONNECTED}
                                     level={userVolume}
-                                    color="#EF4444" 
+                                    color={selectedLanguage.primaryColor}
                                     label="You"
                                 />
                                 <Visualizer 
                                     isActive={connectionState === ConnectionState.CONNECTED}
                                     level={aiVolume}
-                                    color="#FBBF24" 
-                                    label="Frau Müller"
+                                    color={selectedLanguage.secondaryColor}
+                                    label={selectedLanguage.teacherName}
                                 />
                             </div>
 
@@ -179,7 +228,12 @@ const App: React.FC = () => {
                                 <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10 backdrop-blur-sm">
                                     <div className="text-center max-w-sm">
                                         <h2 className="text-2xl font-bold mb-2">Ready for your lesson?</h2>
-                                        <p className="text-gray-600 mb-6">Talk to Frau Müller for 15 minutes. She will help you with pronunciation and grammar.</p>
+                                        <p className="text-gray-600 mb-6">
+                                          Talk to {selectedLanguage.teacherName} for 15 minutes. 
+                                          {selectedLanguage.code === Language.GERMAN 
+                                            ? ' Sie wird Ihnen bei Aussprache und Grammatik helfen.' 
+                                            : ' They will help you with pronunciation and grammar.'}
+                                        </p>
                                         <button 
                                             onClick={handleStart}
                                             className="bg-black text-white px-8 py-3 rounded-full font-semibold hover:bg-gray-800 transition-transform active:scale-95 shadow-lg"
@@ -195,7 +249,7 @@ const App: React.FC = () => {
                                     <div className="text-center">
                                         <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-black mx-auto mb-4"></div>
                                         <h2 className="text-xl font-bold mb-2">Generating Report...</h2>
-                                        <p className="text-gray-500">Frau Müller is writing down your feedback.</p>
+                                        <p className="text-gray-500">{selectedLanguage.teacherName} is writing down your feedback.</p>
                                     </div>
                                 </div>
                             )}

@@ -5,6 +5,22 @@ export enum ConnectionState {
   ERROR = 'ERROR',
 }
 
+export enum Language {
+  GERMAN = 'GERMAN',
+  ENGLISH = 'ENGLISH',
+}
+
+export interface LanguageConfig {
+  code: Language;
+  name: string;
+  flag: string;
+  teacherName: string;
+  systemInstruction: string;
+  voiceName: string;
+  primaryColor: string;
+  secondaryColor: string;
+}
+
 export interface TranscriptionItem {
   speaker: 'user' | 'ai';
   text: string;
