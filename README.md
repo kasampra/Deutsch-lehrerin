@@ -1,70 +1,45 @@
-# Deutsch Daily - AI German Tutor 🇩🇪
+# 🇩🇪 Deutsch-lehrerin: Sovereign AI German Tutor
 
-**Deutsch Daily** is a compassionate, AI-powered German teacher designed to help you practice speaking German for 15 minutes every day. Built with React and the Google Gemini Live API, it provides a real-time, low-latency voice conversation experience with an empathetic persona named "Frau Müller".
+A private, sovereign, and judgment-free German language mentor that lives entirely on your local machine.
 
-![Deutsch Daily Banner](https://images.unsplash.com/photo-1467269204594-9661b134dd2b?auto=format&fit=crop&w=1200&q=80)
+## 🚀 Vision
+Built for the "OwnYourIntelligence" philosophy, this app ensures your language learning data never leaves your hardware. No cloud tracking, no subscriptions, just you and your AI teacher.
 
-## 🌟 Features
+## ✨ Key Features
+- **Sovereign AI Brain**: Support for local LLMs via **Ollama** or **LM Studio**.
+- **Voice-First Interaction**: Talk to your teacher in real-time using local Speech-to-Text and Text-to-Speech.
+- **Proactive Grammar Tutoring**: Receive gentle, immediate corrections as you speak.
+- **Everyday Sentences**: Practice 100+ high-frequency phrases for daily life in Germany with pronunciation validation.
+- **Progress Tracking**: Local dashboard to monitor your sessions, duration, and AI-graded performance.
 
-*   **Real-time Voice Conversation**: Talk naturally with Gemini (using the specialized `gemini-2.5-flash-native-audio` model) with ultra-low latency.
-*   **Empathetic Persona ("Frau Müller")**: The AI is instructed to be patient, encouraging, and pedagogically sound, focusing on conversation flow rather than strict grammar drills.
-*   **Live Visualizer**: Real-time audio visualization for both the user (Red) and the AI (Gold) to indicate listening and speaking states.
-*   **Live Transcript**: Follow the conversation with a scrolling text transcript that differentiates between user and AI.
-*   **15-Minute Timer**: A built-in session timer helps you stick to a daily micro-learning habit.
-*   **Feedback Mode**: At the end of the session, the AI provides constructive feedback on vocabulary, grammar, and pronunciation.
+## 🛠️ One-Click Setup (Local Mode)
 
-## 🛠 Tech Stack
+### 1. Prerequisite: Install the Brain (Ollama)
+- Download and install **Ollama** from [ollama.com](https://ollama.com/).
+- Open your terminal and run: `ollama run llama3` (or your preferred model).
 
-*   **Frontend**: React 19, TypeScript, Tailwind CSS
-*   **AI**: Google Gemini Multimodal Live API (`@google/genai`)
-*   **Audio**: Web Audio API (Raw PCM processing, AudioWorklets/ScriptProcessor)
-*   **Tooling**: Vite
+### 2. Run the App
+- **Development**:
+  ```bash
+  npm install
+  npm run dev
+  ```
+- **Desktop (Tauri)**:
+  ```bash
+  npm run tauri dev
+  ```
 
-## 🚀 Setup Guide
+### 3. Configure
+- Select **Ollama** in the "Choose Your AI Brain" section.
+- Pick your language (German or English).
+- Click **Start Conversation** and begin speaking!
 
-### Prerequisites
+## 🗺️ Product Roadmap
+Detailed user stories and future phases are available in [PRODUCT_ROADMAP.md](./PRODUCT_ROADMAP.md).
 
-1.  **Node.js**: Ensure you have Node.js (v18+) installed.
-2.  **Google Cloud Project**: You need a Google Cloud project with the **Gemini API** enabled.
-3.  **API Key**: Obtain a Gemini API key from [Google AI Studio](https://aistudio.google.com/).
+## 🛡️ Privacy
+This application is "Sovereign by Design". When using the Ollama or LM Studio providers, **zero data** is sent to the cloud. All transcripts, audio, and progress data are stored locally in your browser/app cache.
 
-### Installation
-
-1.  Clone the repository:
-    ```bash
-    git clone https://github.com/yourusername/deutsch-daily.git
-    cd deutsch-daily
-    ```
-
-2.  Install dependencies:
-    ```bash
-    npm install
-    ```
-
-3.  Configure your API Key:
-    *   Create a file named `.env` in the root directory.
-    *   Vite only exposes variables prefixed with `VITE_`, so add your key like this:
-        ```env
-        VITE_GEMINI_API_KEY=your_actual_api_key_here
-        ```
-
-### Running the App
-
-Start the development server:
-
-```bash
-npm run dev
-```
-
-Open your browser to `http://localhost:5173`.
-
-## 📖 Usage
-
-1.  **Start**: Click "Start Conversation". You may need to grant microphone permissions.
-2.  **Speak**: Talk naturally. Frau Müller will introduce herself.
-3.  **Visuals**: Watch the visualizers to see when the AI is listening versus thinking/speaking.
-4.  **Finish**: When the timer runs out, or when you are ready, say "I am done" or "Stop" to receive your personalized feedback.
-
-## 📄 License
-
-MIT
+---
+Created by **Praveen Kasam**, Sovereign AI Architect.
+*Part of the OwnYourIntelligence Business OS.*

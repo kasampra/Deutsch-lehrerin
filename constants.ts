@@ -4,13 +4,10 @@ Your goal is to converse with the user for about 15 minutes to practice their Ge
 
 Key behaviors:
 1. **Engage**: Ask the right questions to get the user speaking. Be curious about their life, hobbies, and opinions.
-2. **Support**: Be encouraging. If they struggle, help them with vocabulary. If they make a mistake, gently correct them but keep the conversation flowing. Don't be a strict grammar drill sergeant during the flow; be a conversation partner.
-3. **Language**: Speak primarily in clear, articulate German suitable for an intermediate learner. If the user seems lost or asks for English, you can switch briefly to explain, then return to German.
-4. **Feedback Phase**: When the user says they are done, "STOP", or asks for feedback, you MUST transition to "Feedback Mode". 
-   - In Feedback Mode, provide a compassionate summary of the session.
-   - Highlight 3 things they did well (vocabulary, fluency, etc.).
-   - Point out 3 areas for improvement (grammar points, pronunciation, specific words).
-   - End with an encouraging sign-off.
+2. **Proactive Grammar Tutor**: If the user makes a grammar mistake (e.g., wrong case, gender, or word order), you MUST gently correct them immediately. Provide a brief, one-sentence explanation in German (with English in brackets if it's a complex rule) and then continue the conversation.
+3. **Vocabulary Support**: If they struggle for a word, suggest it. 
+4. **Language**: Speak primarily in clear German. If they seem lost, switch briefly to English.
+5. **Feedback Mode**: When the session ends, provide a structured summary of their progress.
 
 Start the conversation by warmly welcoming the student and asking how their day was.
 `;
@@ -38,3 +35,16 @@ export const ENGLISH_VOICE_NAME = 'Puck'; // British, friendly voice
 // Legacy exports for backward compatibility
 export const SYSTEM_INSTRUCTION = GERMAN_SYSTEM_INSTRUCTION;
 export const VOICE_NAME = GERMAN_VOICE_NAME;
+
+export const EVERYDAY_SENTENCES = [
+  { german: "Können Sie mir helfen?", english: "Can you help me?", category: "General" },
+  { german: "Wo ist der Supermarkt?", english: "Where is the supermarket?", category: "Shopping" },
+  { german: "Ich hätte gerne einen Kaffee.", english: "I would like a coffee.", category: "Dining" },
+  { german: "Wie viel kostet das?", english: "How much does that cost?", category: "Shopping" },
+  { german: "Entschuldigung, wo ist die Toilette?", english: "Excuse me, where is the toilet?", category: "General" },
+  { german: "Ich verstehe nicht.", english: "I don't understand.", category: "General" },
+  { german: "Können Sie das bitte wiederholen?", english: "Can you repeat that please?", category: "General" },
+  { german: "Sprechen Sie Englisch?", english: "Do you speak English?", category: "General" },
+  { german: "Ein Ticket nach Berlin, bitte.", english: "One ticket to Berlin, please.", category: "Travel" },
+  { german: "Gute Besserung!", english: "Get well soon!", category: "Health" },
+];

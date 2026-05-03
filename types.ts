@@ -1,3 +1,15 @@
+export enum ProviderType {
+  GEMINI = 'GEMINI',
+  OLLAMA = 'OLLAMA',
+  LM_STUDIO = 'LM_STUDIO',
+}
+
+export enum TutorStrictness {
+  GENTLE = 'GENTLE',
+  BALANCED = 'BALANCED',
+  STRICT = 'STRICT',
+}
+
 export enum ConnectionState {
   DISCONNECTED = 'DISCONNECTED',
   CONNECTING = 'CONNECTING',

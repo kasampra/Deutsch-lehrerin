@@ -1,12 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ConnectionState, TranscriptionItem, FeedbackReport, Language, LanguageConfig } from './types';
+import { ConnectionState, TranscriptionItem, FeedbackReport, Language, LanguageConfig, ProviderType, TutorStrictness } from './types';
 import { LiveClient } from './services/liveClient';
+import { LocalLiveClient } from './services/localLiveClient';
+import { AIProvider, GeminiProvider, OllamaProvider, LMStudioProvider } from './services/aiProvider';
 import { generateFeedback } from './services/feedbackService';
+import { saveSession } from './utils/progressUtils';
 import { GERMAN_SYSTEM_INSTRUCTION, GERMAN_VOICE_NAME, ENGLISH_SYSTEM_INSTRUCTION, ENGLISH_VOICE_NAME } from './constants';
 import Visualizer from './components/Visualizer';
 import Transcript from './components/Transcript';
 import FeedbackReportView from './components/FeedbackReport';
 import LanguageSelector from './components/LanguageSelector';
+import ProviderSelector from './components/ProviderSelector';
+import DailyPractice from './components/DailyPractice';
+import ProgressDashboard from './components/ProgressDashboard';
+import WelcomeModal from './components/WelcomeModal';
+import TrainingSession from './components/TrainingSession';
+import { generatePersonalizedTraining, TrainingExercise } from './services/trainingService';
 
 const SESSION_DURATION_SECONDS = 15 * 60; // 15 minutes
 
@@ -35,6 +44,8 @@ const LANGUAGE_CONFIGS: Record<Language, LanguageConfig> = {
 
 const App: React.FC = () => {
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageConfig>(LANGUAGE_CONFIGS[Language.GERMAN]);
+  const [selectedProvider, setSelectedProvider] = useState<ProviderType>(ProviderType.GEMINI);
+  const [tutorStrictness, setTutorStrictness] = useState<TutorStrictness>(TutorStrictness.BALANCED);
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.DISCONNECTED);
   const [transcripts, setTranscripts] = useState<TranscriptionItem[]>([]);
   const [userVolume, setUserVolume] = useState(0);
@@ -45,34 +56,58 @@ const App: React.FC = () => {
   // Feedback State
   const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false);
   const [feedbackReport, setFeedbackReport] = useState<FeedbackReport | null>(null);
+  const [trainingExercises, setTrainingExercises] = useState<TrainingExercise[] | null>(null);
 
-  const liveClientRef = useRef<LiveClient | null>(null);
+  const liveClientRef = useRef<LiveClient | LocalLiveClient | null>(null);
+  const aiProviderRef = useRef<AIProvider | null>(null);
   const timerRef = useRef<number | null>(null);
 
-  // Initialize Client
-    const apiKeyRef = useRef<string | undefined>(import.meta.env.VITE_GEMINI_API_KEY as string | undefined);
+  // Initialize Provider and Client
+  useEffect(() => {
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    
+    // Create the AI Provider based on selection
+    if (selectedProvider === ProviderType.GEMINI && apiKey) {
+      aiProviderRef.current = new GeminiProvider(apiKey);
+    } else if (selectedProvider === ProviderType.OLLAMA) {
+      aiProviderRef.current = new OllamaProvider();
+    } else if (selectedProvider === ProviderType.LM_STUDIO) {
+      aiProviderRef.current = new LMStudioProvider();
+    }
 
-    useEffect(() => {
-        const apiKey = apiKeyRef.current;
-    if (apiKey) {
+    // Create the appropriate Live Client
+    const callbacks = {
+      onStateChange: setConnectionState,
+      onTranscription: handleTranscriptionUpdate,
+      onAudioLevel: (level: number, source: 'user' | 'ai') => {
+        if (source === 'user') setUserVolume(level);
+        else setAiVolume(level);
+      }
+    };
+
+    if (selectedProvider === ProviderType.GEMINI && apiKey) {
       liveClientRef.current = new LiveClient(
         apiKey,
         selectedLanguage.systemInstruction,
         selectedLanguage.voiceName,
-        {
-        onStateChange: setConnectionState,
-        onTranscription: handleTranscriptionUpdate,
-        onAudioLevel: (level, source) => {
-          if (source === 'user') setUserVolume(level);
-          else setAiVolume(level);
-        }
-      });
+        callbacks
+      );
+    } else if (aiProviderRef.current) {
+      liveClientRef.current = new LocalLiveClient(
+        aiProviderRef.current,
+        selectedLanguage.systemInstruction,
+        tutorStrictness,
+        selectedLanguage.code,
+        selectedLanguage.voiceName,
+        callbacks
+      );
     }
+
     return () => {
       liveClientRef.current?.disconnect();
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [selectedLanguage]);
+  }, [selectedLanguage, selectedProvider]);
 
   // Timer Logic
   useEffect(() => {
@@ -105,6 +140,7 @@ const App: React.FC = () => {
     if (!liveClientRef.current) return;
     setTranscripts([]);
     setFeedbackReport(null);
+    setTrainingExercises(null);
     setTimeLeft(SESSION_DURATION_SECONDS);
     await liveClientRef.current.connect();
     setIsTimerRunning(true);
@@ -117,17 +153,36 @@ const App: React.FC = () => {
     setUserVolume(0);
     setAiVolume(0);
 
+    const duration = SESSION_DURATION_SECONDS - timeLeft;
+
     // Trigger Feedback Generation if there is enough conversation
     if (transcripts.length > 2) {
         setIsGeneratingFeedback(true);
         try {
-            const apiKey = apiKeyRef.current;
-            if (apiKey) {
-                const report = await generateFeedback(apiKey, transcripts, selectedLanguage.code);
+            if (aiProviderRef.current) {
+                const report = await generateFeedback(aiProviderRef.current, transcripts, selectedLanguage.code);
                 setFeedbackReport(report);
+                
+                // Save session with feedback
+                saveSession({
+                  language: selectedLanguage.code,
+                  duration: duration,
+                  sentenceCount: transcripts.filter(t => t.speaker === 'user').length,
+                  feedback: report
+                });
+
+                // Generate training exercises
+                const exercises = await generatePersonalizedTraining(aiProviderRef.current, report, selectedLanguage.code);
+                setTrainingExercises(exercises);
             }
         } catch (error) {
             console.error("Failed to generate feedback:", error);
+            // Save session even if feedback fails
+            saveSession({
+                language: selectedLanguage.code,
+                duration: duration,
+                sentenceCount: transcripts.filter(t => t.speaker === 'user').length,
+            });
         } finally {
             setIsGeneratingFeedback(false);
         }
@@ -136,6 +191,7 @@ const App: React.FC = () => {
 
   const resetSession = () => {
       setFeedbackReport(null);
+      setTrainingExercises(null);
       setTranscripts([]);
       setTimeLeft(SESSION_DURATION_SECONDS);
   };
@@ -186,22 +242,69 @@ const App: React.FC = () => {
         {/* Main Content Area */}
         <div className="md:col-span-12">
             
-            {/* Logic to show Feedback Report OR the standard Visualizer */}
-            {feedbackReport ? (
-                <FeedbackReportView report={feedbackReport} onClose={resetSession} />
+            {/* Logic to show Feedback Report OR Training Session OR the standard Visualizer */}
+            {trainingExercises ? (
+                <div className="max-w-2xl mx-auto">
+                    <TrainingSession exercises={trainingExercises} onComplete={resetSession} />
+                </div>
+            ) : feedbackReport ? (
+                <FeedbackReportView report={feedbackReport} onClose={() => {
+                    if (!trainingExercises) resetSession();
+                }} />
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                      {/* Left Column: Visuals & Controls */}
                     <div className="md:col-span-7 space-y-6">
-                        {/* Language Selector */}
+                        {/* Language & Provider Selector */}
                         {connectionState === ConnectionState.DISCONNECTED && (
-                          <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6">
-                            <h2 className="text-lg font-bold text-center mb-4 text-gray-900">Choose Your Language</h2>
-                            <LanguageSelector 
-                              selected={selectedLanguage}
-                              onSelect={setSelectedLanguage}
-                              disabled={connectionState !== ConnectionState.DISCONNECTED}
-                            />
+                          <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 space-y-8">
+                            <div>
+                              <h2 className="text-lg font-bold text-center mb-4 text-gray-900">1. Choose Your Language</h2>
+                              <LanguageSelector 
+                                selected={selectedLanguage}
+                                onSelect={setSelectedLanguage}
+                                disabled={connectionState !== ConnectionState.DISCONNECTED}
+                              />
+                            </div>
+
+                            <div>
+                              <h2 className="text-lg font-bold text-center mb-4 text-gray-900">2. Choose Your AI Brain</h2>
+                              <ProviderSelector 
+                                selected={selectedProvider}
+                                onSelect={setSelectedProvider}
+                                disabled={connectionState !== ConnectionState.DISCONNECTED}
+                              />
+                            </div>
+
+                            <div className="pt-4 border-t border-gray-50">
+                              <div className="flex items-center justify-between mb-4">
+                                <h2 className="text-sm font-bold text-gray-900 uppercase tracking-widest">Tutor Strictness</h2>
+                                <span className="text-[10px] font-bold px-2 py-0.5 bg-black text-white rounded-full">
+                                  {tutorStrictness}
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-3 gap-2">
+                                {(Object.values(TutorStrictness) as TutorStrictness[]).map((s) => (
+                                  <button
+                                    key={s}
+                                    onClick={() => setTutorStrictness(s)}
+                                    className={`
+                                      py-2 px-1 rounded-xl text-[10px] font-bold transition-all border
+                                      ${tutorStrictness === s 
+                                        ? 'bg-black text-white border-black' 
+                                        : 'bg-white text-gray-400 border-gray-100 hover:border-gray-200'}
+                                    `}
+                                  >
+                                    {s}
+                                  </button>
+                                ))}
+                              </div>
+                              <p className="mt-2 text-[10px] text-gray-400 text-center italic">
+                                {tutorStrictness === TutorStrictness.GENTLE && "Minimal interruptions, focused on flow."}
+                                {tutorStrictness === TutorStrictness.BALANCED && "Corrects key errors, maintains conversation."}
+                                {tutorStrictness === TutorStrictness.STRICT && "Corrects every mistake, focused on accuracy."}
+                              </p>
+                            </div>
                           </div>
                         )}
                         
@@ -287,9 +390,17 @@ const App: React.FC = () => {
                         )}
                     </div>
 
-                    {/* Right Column: Transcript */}
-                    <div className="md:col-span-5">
-                        <Transcript items={transcripts} />
+                    {/* Right Column: Transcript, Daily Practice, and Progress */}
+                    <div className="md:col-span-5 space-y-6">
+                        {connectionState === ConnectionState.DISCONNECTED ? (
+                          <>
+                            <DailyPractice />
+                            <ProgressDashboard />
+                          </>
+                        ) : (
+                          <Transcript items={transcripts} />
+                        )}
+                        
                         <div className="mt-4 p-4 bg-yellow-50 rounded-xl border border-yellow-100 text-sm text-yellow-800">
                             <p className="font-semibold mb-1">Your Goal</p>
                             <p>Speak for 15 minutes. At the end, you will receive a detailed report with actionable advice.</p>
@@ -300,6 +411,7 @@ const App: React.FC = () => {
 
         </div>
       </main>
+      <WelcomeModal />
     </div>
   );
 };
