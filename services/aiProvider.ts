@@ -64,7 +64,7 @@ export class GeminiProvider implements AIProvider {
     };
 
     const response = await this.ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.5-flash",
       contents: prompts[language],
       config: {
         responseMimeType: "application/json",

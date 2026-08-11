@@ -37,6 +37,10 @@ const mockSpeechRecognition = vi.fn().mockImplementation(function(this: any) {
 }));
 
 describe('App UAT', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
   it('renders correctly and shows language and provider selectors', () => {
     render(<App />);
 
@@ -61,5 +65,16 @@ describe('App UAT', () => {
   it('shows the start button for conversation', () => {
     render(<App />);
     expect(screen.getByText(/Start Conversation/i)).toBeInTheDocument();
+  });
+
+  it('allows entering a Gemini API Key', () => {
+    render(<App />);
+    
+    // The default selection is Gemini, so the settings block for Gemini should be visible
+    const apiKeyInput = screen.getByPlaceholderText(/Enter your Gemini API Key/i) as HTMLInputElement;
+    expect(apiKeyInput).toBeInTheDocument();
+
+    fireEvent.change(apiKeyInput, { target: { value: 'test-api-key' } });
+    expect(apiKeyInput.value).toBe('test-api-key');
   });
 });

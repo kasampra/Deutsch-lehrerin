@@ -34,8 +34,10 @@ Built for the "OwnYourIntelligence" philosophy, this app ensures your language l
 - Pick your language (German or English).
 - Click **Start Conversation** and begin speaking!
 
-## 🗺️ Product Roadmap
-Detailed user stories and future phases are available in [PRODUCT_ROADMAP.md](./PRODUCT_ROADMAP.md).
+## 🗺️ Product Architecture & Roadmap
+- **System Architecture**: [PRODUCT_ARCHITECTURE.md](./docs/PRODUCT_ARCHITECTURE.md) (v1.1 Hardened Production Specification)
+- **Mobile Developer Spec**: [MOBILE_DEVELOPER_SPEC.md](./docs/MOBILE_DEVELOPER_SPEC.md)
+- **Product Roadmap**: [PRODUCT_ROADMAP.md](./PRODUCT_ROADMAP.md)
 
 ## 🛡️ Privacy
 This application is "Sovereign by Design". When using the Ollama or LM Studio providers, **zero data** is sent to the cloud. All transcripts, audio, and progress data are stored locally in your browser/app cache.

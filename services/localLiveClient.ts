@@ -14,9 +14,10 @@ export class LocalLiveClient {
     private languageCode: string, // e.g., 'GERMAN'
     private voiceName: string,
     private callbacks: {
-      onStateChange: (state: ConnectionState) => void;
+      onStateChange: (state: ConnectionState, errorMessage?: string) => void;
       onTranscription: (item: TranscriptionItem) => void;
       onAudioLevel: (level: number, source: 'user' | 'ai') => void;
+      onAutoStop?: () => void;
     }
   ) {
     // Modify system instruction based on strictness
@@ -25,7 +26,16 @@ export class LocalLiveClient {
       ${this.tutorStrictness === 'BALANCED' ? 'Correct significant grammar and vocabulary errors.' : ''}
       ${this.tutorStrictness === 'STRICT' ? 'Correct every single grammatical, gender, or case error meticulously.' : ''}
     `;
-    this.systemInstruction += strictnessNote;
+    
+    const correctionFormattingInstruction = `
+    Whenever you correct a grammatical mistake, you MUST put the correction in this exact format at the beginning of your response:
+    [Korrektur: "incorrect text" -> "correct text" | explanation of the rule]
+    For example:
+    "[Korrektur: 'Ich habe ein Auto gekaufte' -> 'Ich habe ein Auto gekauft' | 'gekauft' is the regular past participle of 'kaufen'] Ja, das ist ein schönes Auto!"
+    Keep explanations short and clear in German (with English translation in brackets if it is a complex rule).
+    `;
+    
+    this.systemInstruction += strictnessNote + correctionFormattingInstruction;
 
     // Initialize Web Speech Recognition
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -61,9 +71,22 @@ export class LocalLiveClient {
 
       this.recognition.onerror = (event: any) => {
         console.error('Speech recognition error', event.error);
-        if (event.error !== 'no-speech') {
-          this.callbacks.onStateChange(ConnectionState.ERROR);
+        if (event.error === 'no-speech') return;
+
+        let msg = 'An unexpected speech recognition error occurred.';
+        if (event.error === 'not-allowed') {
+          msg = 'Microphone access is blocked. Please click the camera/mic icon in the browser address bar and grant access to continue.';
+        } else if (event.error === 'network') {
+          msg = 'Speech recognition failed due to a network issue. Some browsers require internet to process speech recognition. Try Google Chrome or Microsoft Edge.';
+        } else if (event.error === 'audio-capture') {
+          msg = 'No microphone was detected. Connect an input device and try again.';
+        } else if (event.error === 'language-not-supported') {
+          msg = 'Tutor speech recognition failed because the selected language is not supported by your browser\'s voice engine.';
+        } else if (event.error) {
+          msg = `Speech recognition error: ${event.error}`;
         }
+        
+        this.callbacks.onStateChange(ConnectionState.ERROR, msg);
       };
     }
   }
@@ -118,9 +141,7 @@ export class LocalLiveClient {
       // Give it a moment to speak then disconnect
       setTimeout(() => {
         if (this.isConnected) {
-          // We can't call handleStop directly here as it's in App.tsx
-          // But we can trigger a state change or just let the user click
-          // Actually, a better way is to provide a callback for auto-stop
+          this.callbacks.onAutoStop?.();
         }
       }, 3000);
       return;
