@@ -1,6 +1,50 @@
 import React, { useState } from 'react';
 import { EVERYDAY_SENTENCES } from '../constants';
 
+function normalizeText(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize("NFD") // Split accent characters
+    .replace(/[\u0300-\u036f]/g, "") // Remove accents
+    .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, "") // Remove punctuation
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/ß/g, "ss")
+    .replace(/ae/g, "a")
+    .replace(/oe/g, "o")
+    .replace(/ue/g, "u")
+    .replace(/ä/g, "a")
+    .replace(/ö/g, "o")
+    .replace(/ü/g, "u");
+}
+
+function levenshteinDistance(a: string, b: string): number {
+  const matrix = [];
+  for (let i = 0; i <= b.length; i++) {
+    matrix[i] = [i];
+  }
+  for (let j = 0; j <= a.length; j++) {
+    matrix[0][j] = j;
+  }
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1, // substitution
+          Math.min(
+            matrix[i][j - 1] + 1, // insertion
+            matrix[i - 1][j] + 1 // deletion
+          )
+        );
+      }
+    }
+  }
+  return matrix[b.length][a.length];
+}
+
+
 const DailyPractice: React.FC = () => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showEnglish, setShowEnglish] = useState(false);
@@ -35,11 +79,18 @@ const DailyPractice: React.FC = () => {
     setFeedback(null);
 
     recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript.toLowerCase().replace(/[.,!?-]/g, "");
-      const target = current.german.toLowerCase().replace(/[.,!?-]/g, "");
-      
-      if (transcript === target) {
+      const transcript = event.results[0][0].transcript;
+      const normTranscript = normalizeText(transcript);
+      const normTarget = normalizeText(current.german);
+
+      const distance = levenshteinDistance(normTranscript, normTarget);
+      const maxLength = Math.max(normTranscript.length, normTarget.length);
+      const similarity = maxLength === 0 ? 1 : 1 - distance / maxLength;
+
+      if (normTranscript === normTarget) {
         setFeedback("✅ Perfect pronunciation!");
+      } else if (similarity >= 0.8) {
+        setFeedback(`✅ Great job! (Similarity: ${Math.round(similarity * 100)}%)`);
       } else {
         setFeedback(`❌ You said: "${transcript}". Try again!`);
       }

@@ -35,9 +35,10 @@ export class LiveClient {
   constructor(
     apiKey: string, 
     private systemInstruction: string,
+    private tutorStrictness: string,
     private voiceName: string,
     callbacks: {
-      onStateChange: (state: ConnectionState) => void;
+      onStateChange: (state: ConnectionState, errorMessage?: string) => void;
       onTranscription: (item: TranscriptionItem) => void;
       onAudioLevel: (level: number, source: 'user' | 'ai') => void;
     }
@@ -46,6 +47,20 @@ export class LiveClient {
     this.onStateChange = callbacks.onStateChange;
     this.onTranscription = callbacks.onTranscription;
     this.onAudioLevel = callbacks.onAudioLevel;
+
+    const strictnessNote = `\nTutor Strictness: ${this.tutorStrictness}. 
+      ${this.tutorStrictness === 'GENTLE' ? 'Only correct major errors that break communication.' : ''}
+      ${this.tutorStrictness === 'BALANCED' ? 'Correct significant grammar and vocabulary errors.' : ''}
+      ${this.tutorStrictness === 'STRICT' ? 'Correct every single grammatical, gender, or case error meticulously.' : ''}
+    `;
+    const correctionFormattingInstruction = `
+    Whenever you correct a grammatical mistake, you MUST put the correction in this exact format at the beginning of your response:
+    [Korrektur: "incorrect text" -> "correct text" | explanation of the rule]
+    For example:
+    "[Korrektur: 'Ich habe ein Auto gekaufte' -> 'Ich habe ein Auto gekauft' | 'gekauft' is the regular past participle of 'kaufen'] Ja, das ist ein schönes Auto!"
+    Keep explanations short and clear in German (with English translation in brackets if it is a complex rule).
+    `;
+    this.systemInstruction += strictnessNote + correctionFormattingInstruction;
   }
 
   public async connect() {
