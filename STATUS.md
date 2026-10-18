@@ -1,7 +1,7 @@
 # STATUS: deutsch-lehrerin
 
 **Health**: 🟢 Healthy
-**Last Updated**: 2026-05-02
+**Last Updated**: 2026-06-30
 
 ## Context
 The project is currently a functional prototype for a local German tutor. It focuses on removing the friction of cloud APIs and subscription models for language learning.

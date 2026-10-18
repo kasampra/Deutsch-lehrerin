@@ -15,6 +15,11 @@ import DailyPractice from './components/DailyPractice';
 import ProgressDashboard from './components/ProgressDashboard';
 import WelcomeModal from './components/WelcomeModal';
 import TrainingSession from './components/TrainingSession';
+import ScenarioSelector from './components/ScenarioSelector';
+import BriefkastenModal from './components/BriefkastenModal';
+import MicDiagnosticModal from './components/MicDiagnosticModal';
+import { SCENARIOS, Scenario } from './constants/scenarios';
+import { addGrammarCorrectionsFromSession } from './services/srsService';
 import { generatePersonalizedTraining, TrainingExercise } from './services/trainingService';
 
 const SESSION_DURATION_SECONDS = 15 * 60; // 15 minutes
@@ -44,15 +49,34 @@ const LANGUAGE_CONFIGS: Record<Language, LanguageConfig> = {
 
 const App: React.FC = () => {
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageConfig>(LANGUAGE_CONFIGS[Language.GERMAN]);
-  const [selectedProvider, setSelectedProvider] = useState<ProviderType>(ProviderType.GEMINI);
-  const [tutorStrictness, setTutorStrictness] = useState<TutorStrictness>(TutorStrictness.BALANCED);
+  const [selectedProvider, setSelectedProvider] = useState<ProviderType>(() => {
+    return (localStorage.getItem('deutsch_lehrerin_provider') as ProviderType) || ProviderType.GEMINI;
+  });
+  const [tutorStrictness, setTutorStrictness] = useState<TutorStrictness>(() => {
+    return (localStorage.getItem('deutsch_lehrerin_strictness') as TutorStrictness) || TutorStrictness.BALANCED;
+  });
+  const [geminiApiKey, setGeminiApiKey] = useState(() => {
+    return localStorage.getItem('deutsch_lehrerin_gemini_api_key') || '';
+  });
+  const [selectedModel, setSelectedModel] = useState(() => {
+    return localStorage.getItem('deutsch_lehrerin_selected_model') || 'qwen2.5:7b';
+  });
+
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.DISCONNECTED);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [transcripts, setTranscripts] = useState<TranscriptionItem[]>([]);
   const [userVolume, setUserVolume] = useState(0);
   const [aiVolume, setAiVolume] = useState(0);
   const [timeLeft, setTimeLeft] = useState(SESSION_DURATION_SECONDS);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   
+  // Scenario, Briefkasten & Mic State
+  const [selectedScenario, setSelectedScenario] = useState<Scenario>(SCENARIOS[0]);
+  const [isBriefkastenOpen, setIsBriefkastenOpen] = useState(false);
+  const [isMicDiagnosticOpen, setIsMicDiagnosticOpen] = useState(false);
+  const [customInstruction, setCustomInstruction] = useState<string | null>(null);
+  const [activeScenarioTitle, setActiveScenarioTitle] = useState<string | null>(null);
+
   // Feedback State
   const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false);
   const [feedbackReport, setFeedbackReport] = useState<FeedbackReport | null>(null);
@@ -62,40 +86,146 @@ const App: React.FC = () => {
   const aiProviderRef = useRef<AIProvider | null>(null);
   const timerRef = useRef<number | null>(null);
 
+  // Sync settings to localStorage
+  useEffect(() => {
+    localStorage.setItem('deutsch_lehrerin_provider', selectedProvider);
+  }, [selectedProvider]);
+
+  useEffect(() => {
+    localStorage.setItem('deutsch_lehrerin_strictness', tutorStrictness);
+  }, [tutorStrictness]);
+
+  useEffect(() => {
+    localStorage.setItem('deutsch_lehrerin_gemini_api_key', geminiApiKey);
+  }, [geminiApiKey]);
+
+  useEffect(() => {
+    localStorage.setItem('deutsch_lehrerin_selected_model', selectedModel);
+  }, [selectedModel]);
+
+  // Keep refs updated to prevent stale closures in callbacks
+  const transcriptsRef = useRef(transcripts);
+  useEffect(() => {
+    transcriptsRef.current = transcripts;
+  }, [transcripts]);
+
+  const timeLeftRef = useRef(timeLeft);
+  useEffect(() => {
+    timeLeftRef.current = timeLeft;
+  }, [timeLeft]);
+
+  // Define handleStop first so it can be referenced in useEffect
+  const handleStop = async () => {
+    if (!liveClientRef.current) return;
+    await liveClientRef.current.disconnect();
+    setIsTimerRunning(false);
+    setUserVolume(0);
+    setAiVolume(0);
+
+    const duration = SESSION_DURATION_SECONDS - timeLeftRef.current;
+    const currentTranscripts = transcriptsRef.current;
+
+    // Automatically extract grammar mistakes from conversation and save to SRS review deck
+    if (currentTranscripts.length > 0) {
+      addGrammarCorrectionsFromSession(currentTranscripts);
+    }
+
+    // Trigger Feedback Generation if there is enough conversation
+    if (currentTranscripts.length > 2) {
+        setIsGeneratingFeedback(true);
+        try {
+            if (aiProviderRef.current) {
+                const report = await generateFeedback(aiProviderRef.current, currentTranscripts, selectedLanguage.code);
+                setFeedbackReport(report);
+                
+                // Save session with feedback
+                saveSession({
+                  language: selectedLanguage.code,
+                  duration: duration,
+                  sentenceCount: currentTranscripts.filter(t => t.speaker === 'user').length,
+                  feedback: report
+                });
+
+                // Generate training exercises
+                const exercises = await generatePersonalizedTraining(aiProviderRef.current, report, selectedLanguage.code);
+                setTrainingExercises(exercises);
+            }
+        } catch (error) {
+            console.error("Failed to generate feedback:", error);
+            // Save session even if feedback fails
+            saveSession({
+                language: selectedLanguage.code,
+                duration: duration,
+                sentenceCount: currentTranscripts.filter(t => t.speaker === 'user').length,
+            });
+        } finally {
+            setIsGeneratingFeedback(false);
+        }
+    }
+  };
+
+  const handleStopRef = useRef(handleStop);
+  useEffect(() => {
+    handleStopRef.current = handleStop;
+  }, [handleStop]);
+
   // Initialize Provider and Client
   useEffect(() => {
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    const apiKey = geminiApiKey || import.meta.env.VITE_GEMINI_API_KEY || '';
     
     // Create the AI Provider based on selection
-    if (selectedProvider === ProviderType.GEMINI && apiKey) {
-      aiProviderRef.current = new GeminiProvider(apiKey);
+    if (selectedProvider === ProviderType.GEMINI) {
+      if (apiKey) {
+        aiProviderRef.current = new GeminiProvider(apiKey);
+      } else {
+        aiProviderRef.current = null;
+      }
     } else if (selectedProvider === ProviderType.OLLAMA) {
-      aiProviderRef.current = new OllamaProvider();
+      aiProviderRef.current = new OllamaProvider(selectedModel);
     } else if (selectedProvider === ProviderType.LM_STUDIO) {
-      aiProviderRef.current = new LMStudioProvider();
+      aiProviderRef.current = new LMStudioProvider(selectedModel);
     }
 
     // Create the appropriate Live Client
     const callbacks = {
-      onStateChange: setConnectionState,
+      onStateChange: (state: ConnectionState, errorMessage?: string) => {
+        setConnectionState(state);
+        if (state === ConnectionState.ERROR && errorMessage) {
+          setConnectionError(errorMessage);
+        }
+      },
       onTranscription: handleTranscriptionUpdate,
       onAudioLevel: (level: number, source: 'user' | 'ai') => {
         if (source === 'user') setUserVolume(level);
         else setAiVolume(level);
+      },
+      onAutoStop: () => {
+        handleStopRef.current();
       }
     };
 
-    if (selectedProvider === ProviderType.GEMINI && apiKey) {
-      liveClientRef.current = new LiveClient(
-        apiKey,
-        selectedLanguage.systemInstruction,
-        selectedLanguage.voiceName,
-        callbacks
-      );
+    const activeSystemInstruction =
+      customInstruction ||
+      (selectedLanguage.code === Language.GERMAN
+        ? selectedScenario.systemInstruction
+        : selectedLanguage.systemInstruction);
+
+    if (selectedProvider === ProviderType.GEMINI) {
+      if (apiKey) {
+        liveClientRef.current = new LiveClient(
+          apiKey,
+          activeSystemInstruction,
+          tutorStrictness,
+          selectedLanguage.voiceName,
+          callbacks
+        );
+      } else {
+        liveClientRef.current = null;
+      }
     } else if (aiProviderRef.current) {
       liveClientRef.current = new LocalLiveClient(
         aiProviderRef.current,
-        selectedLanguage.systemInstruction,
+        activeSystemInstruction,
         tutorStrictness,
         selectedLanguage.code,
         selectedLanguage.voiceName,
@@ -107,7 +237,7 @@ const App: React.FC = () => {
       liveClientRef.current?.disconnect();
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [selectedLanguage, selectedProvider]);
+  }, [selectedLanguage, selectedProvider, tutorStrictness, selectedModel, geminiApiKey, selectedScenario, customInstruction]);
 
   // Timer Logic
   useEffect(() => {
@@ -137,7 +267,15 @@ const App: React.FC = () => {
   };
 
   const handleStart = async () => {
-    if (!liveClientRef.current) return;
+    if (!liveClientRef.current) {
+      if (selectedProvider === ProviderType.GEMINI) {
+        alert("Please enter a Gemini API Key in the settings below first.");
+      } else {
+        alert("AI Provider not initialized. Please ensure your local model server is running.");
+      }
+      return;
+    }
+    setConnectionError(null);
     setTranscripts([]);
     setFeedbackReport(null);
     setTrainingExercises(null);
@@ -146,54 +284,29 @@ const App: React.FC = () => {
     setIsTimerRunning(true);
   };
 
-  const handleStop = async () => {
-    if (!liveClientRef.current) return;
-    await liveClientRef.current.disconnect();
-    setIsTimerRunning(false);
-    setUserVolume(0);
-    setAiVolume(0);
-
-    const duration = SESSION_DURATION_SECONDS - timeLeft;
-
-    // Trigger Feedback Generation if there is enough conversation
-    if (transcripts.length > 2) {
-        setIsGeneratingFeedback(true);
-        try {
-            if (aiProviderRef.current) {
-                const report = await generateFeedback(aiProviderRef.current, transcripts, selectedLanguage.code);
-                setFeedbackReport(report);
-                
-                // Save session with feedback
-                saveSession({
-                  language: selectedLanguage.code,
-                  duration: duration,
-                  sentenceCount: transcripts.filter(t => t.speaker === 'user').length,
-                  feedback: report
-                });
-
-                // Generate training exercises
-                const exercises = await generatePersonalizedTraining(aiProviderRef.current, report, selectedLanguage.code);
-                setTrainingExercises(exercises);
-            }
-        } catch (error) {
-            console.error("Failed to generate feedback:", error);
-            // Save session even if feedback fails
-            saveSession({
-                language: selectedLanguage.code,
-                duration: duration,
-                sentenceCount: transcripts.filter(t => t.speaker === 'user').length,
-            });
-        } finally {
-            setIsGeneratingFeedback(false);
-        }
-    }
-  };
-
   const resetSession = () => {
       setFeedbackReport(null);
       setTrainingExercises(null);
       setTranscripts([]);
       setTimeLeft(SESSION_DURATION_SECONDS);
+      setCustomInstruction(null);
+      setActiveScenarioTitle(null);
+  };
+
+  const handleStartBriefkastenCall = (roleplayInstruction: string, title: string) => {
+    setCustomInstruction(roleplayInstruction);
+    setActiveScenarioTitle(title);
+    setTimeout(async () => {
+      if (liveClientRef.current) {
+        setConnectionError(null);
+        setTranscripts([]);
+        setFeedbackReport(null);
+        setTrainingExercises(null);
+        setTimeLeft(SESSION_DURATION_SECONDS);
+        await liveClientRef.current.connect();
+        setIsTimerRunning(true);
+      }
+    }, 150);
   };
 
   const formatTime = (seconds: number) => {
@@ -216,12 +329,35 @@ const App: React.FC = () => {
                 </h1>
             </div>
             
-            {/* Timer Display */}
-            <div className="flex items-center space-x-4 bg-gray-100 rounded-full px-4 py-1.5">
-                <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" style={{ opacity: isTimerRunning ? 1 : 0 }}></div>
-                <span className={`font-mono font-medium ${timeLeft < 60 ? 'text-red-600' : 'text-gray-700'}`}>
-                    {formatTime(timeLeft)}
-                </span>
+            {/* Header Right Actions */}
+            <div className="flex items-center space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setIsBriefkastenOpen(true)}
+                  className="bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/70 font-bold text-xs px-3.5 py-1.5 rounded-full transition-colors flex items-center space-x-1.5 shadow-2xs"
+                  title="Decode German official mail"
+                >
+                  <span>📬</span>
+                  <span>Briefkasten</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsMicDiagnosticOpen(true)}
+                  className="bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold text-xs px-3.5 py-1.5 rounded-full transition-colors flex items-center space-x-1.5 shadow-2xs"
+                  title="Test microphone and audio hardware"
+                >
+                  <span>🎙️</span>
+                  <span>Mic Check</span>
+                </button>
+
+                {/* Timer Display */}
+                <div className="flex items-center space-x-3 bg-gray-100 rounded-full px-4 py-1.5">
+                    <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" style={{ opacity: isTimerRunning ? 1 : 0 }}></div>
+                    <span className={`font-mono font-medium text-sm ${timeLeft < 60 ? 'text-red-600' : 'text-gray-700'}`}>
+                        {formatTime(timeLeft)}
+                    </span>
+                </div>
             </div>
         </div>
         <div className="h-1 bg-gray-100 w-full">
@@ -255,9 +391,9 @@ const App: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                      {/* Left Column: Visuals & Controls */}
                     <div className="md:col-span-7 space-y-6">
-                        {/* Language & Provider Selector */}
-                        {connectionState === ConnectionState.DISCONNECTED && (
-                          <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 space-y-8">
+                        {/* Language & Provider Selector + Start Button */}
+                        {connectionState === ConnectionState.DISCONNECTED && !isGeneratingFeedback && (
+                          <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
                             <div>
                               <h2 className="text-lg font-bold text-center mb-4 text-gray-900">1. Choose Your Language</h2>
                               <LanguageSelector 
@@ -267,12 +403,32 @@ const App: React.FC = () => {
                               />
                             </div>
 
-                            <div>
-                              <h2 className="text-lg font-bold text-center mb-4 text-gray-900">2. Choose Your AI Brain</h2>
+                            {selectedLanguage.code === Language.GERMAN && (
+                              <div className="pt-4 border-t border-gray-50">
+                                <ScenarioSelector
+                                  selected={selectedScenario}
+                                  onSelect={(sc) => {
+                                    setSelectedScenario(sc);
+                                    setCustomInstruction(null);
+                                    setActiveScenarioTitle(null);
+                                  }}
+                                  disabled={connectionState !== ConnectionState.DISCONNECTED}
+                                />
+                              </div>
+                            )}
+
+                            <div className="pt-4 border-t border-gray-50">
+                              <h2 className="text-lg font-bold text-center mb-4 text-gray-900">
+                                {selectedLanguage.code === Language.GERMAN ? '3. Choose Your AI Brain' : '2. Choose Your AI Brain'}
+                              </h2>
                               <ProviderSelector 
                                 selected={selectedProvider}
                                 onSelect={setSelectedProvider}
                                 disabled={connectionState !== ConnectionState.DISCONNECTED}
+                                geminiApiKey={geminiApiKey}
+                                setGeminiApiKey={setGeminiApiKey}
+                                selectedModel={selectedModel}
+                                setSelectedModel={setSelectedModel}
                               />
                             </div>
 
@@ -305,73 +461,80 @@ const App: React.FC = () => {
                                 {tutorStrictness === TutorStrictness.STRICT && "Corrects every mistake, focused on accuracy."}
                               </p>
                             </div>
+
+                            {/* Start Action */}
+                            <div className="pt-6 border-t border-gray-100 flex flex-col items-center">
+                              <button 
+                                  onClick={handleStart}
+                                  className="w-full bg-black text-white py-4 rounded-2xl font-bold hover:bg-gray-800 transition-all active:scale-[0.98] shadow-lg flex items-center justify-center space-x-2 text-base"
+                              >
+                                  <span>🚀</span>
+                                  <span>
+                                    {activeScenarioTitle 
+                                      ? `Start: ${activeScenarioTitle}` 
+                                      : selectedLanguage.code === Language.GERMAN
+                                      ? `Start: ${selectedScenario.title}`
+                                      : 'Start Conversation'}
+                                  </span>
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Loader when feedback is generating */}
+                        {isGeneratingFeedback && (
+                          <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8 flex flex-col items-center justify-center min-h-[400px] animate-in fade-in duration-300">
+                              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-black mx-auto mb-4"></div>
+                              <h2 className="text-xl font-bold mb-2">Generating Report...</h2>
+                              <p className="text-gray-500">{selectedLanguage.teacherName} is writing down your feedback.</p>
                           </div>
                         )}
                         
-                        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8 flex flex-col items-center justify-center min-h-[400px] relative overflow-hidden">
-                            <div className="absolute inset-0 bg-gradient-to-b from-gray-50/50 to-transparent pointer-events-none"></div>
-                            
-                            <div className="flex items-center justify-center space-x-12 z-0">
-                                <Visualizer 
-                                    isActive={connectionState === ConnectionState.CONNECTED}
-                                    level={userVolume}
-                                    color={selectedLanguage.primaryColor}
-                                    label="You"
-                                />
-                                <Visualizer 
-                                    isActive={connectionState === ConnectionState.CONNECTED}
-                                    level={aiVolume}
-                                    color={selectedLanguage.secondaryColor}
-                                    label={selectedLanguage.teacherName}
-                                />
-                            </div>
+                        {/* Audio Visualizer (only visible when active or connecting) */}
+                        {connectionState !== ConnectionState.DISCONNECTED && (
+                          <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8 flex flex-col items-center justify-center min-h-[400px] relative overflow-hidden animate-in zoom-in-95 duration-300">
+                              <div className="absolute inset-0 bg-gradient-to-b from-gray-50/50 to-transparent pointer-events-none"></div>
+                              
+                              <div className="flex items-center justify-center space-x-12 z-0">
+                                  <Visualizer 
+                                      isActive={connectionState === ConnectionState.CONNECTED}
+                                      level={userVolume}
+                                      color={selectedLanguage.primaryColor}
+                                      label="You"
+                                  />
+                                  <Visualizer 
+                                      isActive={connectionState === ConnectionState.CONNECTED}
+                                      level={aiVolume}
+                                      color={selectedLanguage.secondaryColor}
+                                      label={selectedLanguage.teacherName}
+                                  />
+                              </div>
 
-                            {/* Overlays */}
-                            {connectionState === ConnectionState.DISCONNECTED && !isGeneratingFeedback && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10 backdrop-blur-sm">
-                                    <div className="text-center max-w-sm">
-                                        <h2 className="text-2xl font-bold mb-2">Ready for your lesson?</h2>
-                                        <p className="text-gray-600 mb-6">
-                                          Talk to {selectedLanguage.teacherName} for 15 minutes. 
-                                          {selectedLanguage.code === Language.GERMAN 
-                                            ? ' Sie wird Ihnen bei Aussprache und Grammatik helfen.' 
-                                            : ' They will help you with pronunciation and grammar.'}
-                                        </p>
-                                        <button 
-                                            onClick={handleStart}
-                                            className="bg-black text-white px-8 py-3 rounded-full font-semibold hover:bg-gray-800 transition-transform active:scale-95 shadow-lg"
-                                        >
-                                            Start Conversation
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
+                               {connectionState === ConnectionState.ERROR && (
+                                  <div className="absolute inset-0 flex items-center justify-center bg-red-50/95 z-10 p-6">
+                                      <div className="text-center max-w-sm">
+                                          <span className="text-3xl mb-2 block">⚠️</span>
+                                          <h3 className="text-red-700 font-bold text-sm mb-1">Connection Failed</h3>
+                                          <p className="text-gray-600 text-xs mb-4 leading-normal">
+                                            {connectionError || "Could not start voice session. Check your browser settings and permissions."}
+                                          </p>
+                                          <button 
+                                            onClick={() => setConnectionState(ConnectionState.DISCONNECTED)} 
+                                            className="bg-black text-white px-5 py-2 rounded-full text-xs font-semibold hover:bg-gray-800 transition-colors shadow-md"
+                                          >
+                                            Close
+                                          </button>
+                                      </div>
+                                  </div>
+                              )}
 
-                            {isGeneratingFeedback && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-white/95 z-20 backdrop-blur-sm">
-                                    <div className="text-center">
-                                        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-black mx-auto mb-4"></div>
-                                        <h2 className="text-xl font-bold mb-2">Generating Report...</h2>
-                                        <p className="text-gray-500">{selectedLanguage.teacherName} is writing down your feedback.</p>
-                                    </div>
-                                </div>
-                            )}
-                            
-                            {connectionState === ConnectionState.ERROR && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-red-50/90 z-10">
-                                    <div className="text-center">
-                                        <p className="text-red-600 font-medium mb-4">Connection failed.</p>
-                                        <button onClick={() => setConnectionState(ConnectionState.DISCONNECTED)} className="text-sm underline">Reset</button>
-                                    </div>
-                                </div>
-                            )}
-
-                             {connectionState === ConnectionState.CONNECTING && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
-                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black"></div>
-                                </div>
-                            )}
-                        </div>
+                               {connectionState === ConnectionState.CONNECTING && (
+                                  <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
+                                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black"></div>
+                                  </div>
+                              )}
+                          </div>
+                        )}
 
                         {/* Controls */}
                         {connectionState === ConnectionState.CONNECTED && (
@@ -411,6 +574,16 @@ const App: React.FC = () => {
 
         </div>
       </main>
+      <BriefkastenModal
+        isOpen={isBriefkastenOpen}
+        onClose={() => setIsBriefkastenOpen(false)}
+        aiProvider={aiProviderRef.current}
+        onStartScenarioCall={handleStartBriefkastenCall}
+      />
+      <MicDiagnosticModal
+        isOpen={isMicDiagnosticOpen}
+        onClose={() => setIsMicDiagnosticOpen(false)}
+      />
       <WelcomeModal />
     </div>
   );

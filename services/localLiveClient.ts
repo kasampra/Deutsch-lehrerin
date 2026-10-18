@@ -1,10 +1,21 @@
 import { ConnectionState, TranscriptionItem } from "../types";
 import { AIProvider } from "./aiProvider";
 
+export function sanitizeTTS(text: string): string {
+  const correctionMatch = text.match(/\[Korrektur:\s*['"`]?(.*?)['"`]?\s*->\s*['"`]?(.*?)['"`]?\s*\|\s*(.*?)\]/i);
+  let cleaned = text;
+  if (correctionMatch) {
+    const [, , correct] = correctionMatch;
+    cleaned = text.replace(correctionMatch[0], `Merke: ${correct}. `).trim();
+  }
+  return cleaned.replace(/[*#_`]/g, '').trim();
+}
+
 export class LocalLiveClient {
   private recognition: any | null = null;
   private synthesis: SpeechSynthesis = window.speechSynthesis;
   private isConnected: boolean = false;
+  private isAISpeaking: boolean = false;
   private conversationHistory: { role: 'user' | 'assistant', content: string }[] = [];
 
   constructor(
@@ -14,9 +25,10 @@ export class LocalLiveClient {
     private languageCode: string, // e.g., 'GERMAN'
     private voiceName: string,
     private callbacks: {
-      onStateChange: (state: ConnectionState) => void;
+      onStateChange: (state: ConnectionState, errorMessage?: string) => void;
       onTranscription: (item: TranscriptionItem) => void;
       onAudioLevel: (level: number, source: 'user' | 'ai') => void;
+      onAutoStop?: () => void;
     }
   ) {
     // Modify system instruction based on strictness
@@ -25,7 +37,16 @@ export class LocalLiveClient {
       ${this.tutorStrictness === 'BALANCED' ? 'Correct significant grammar and vocabulary errors.' : ''}
       ${this.tutorStrictness === 'STRICT' ? 'Correct every single grammatical, gender, or case error meticulously.' : ''}
     `;
-    this.systemInstruction += strictnessNote;
+    
+    const correctionFormattingInstruction = `
+    Whenever you correct a grammatical mistake, you MUST put the correction in this exact format at the beginning of your response:
+    [Korrektur: "incorrect text" -> "correct text" | explanation of the rule]
+    For example:
+    "[Korrektur: 'Ich habe ein Auto gekaufte' -> 'Ich habe ein Auto gekauft' | 'gekauft' is the regular past participle of 'kaufen'] Ja, das ist ein schönes Auto!"
+    Keep explanations short and clear in German (with English translation in brackets if it is a complex rule).
+    `;
+    
+    this.systemInstruction += strictnessNote + correctionFormattingInstruction;
 
     // Initialize Web Speech Recognition
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -36,6 +57,9 @@ export class LocalLiveClient {
       this.recognition.lang = this.languageCode === 'GERMAN' ? 'de-DE' : 'en-US';
 
       this.recognition.onresult = (event: any) => {
+        // Echo suppression: Ignore mic buffer while AI speech synthesis is playing
+        if (this.isAISpeaking) return;
+
         let interimTranscript = '';
         let finalTranscript = '';
 
@@ -59,11 +83,35 @@ export class LocalLiveClient {
         }
       };
 
+      this.recognition.onend = () => {
+        // Automatically restart listening if session is active and AI is not speaking
+        if (this.isConnected && !this.isAISpeaking) {
+          try {
+            this.recognition.start();
+          } catch (e) {
+            // Already running or starting
+          }
+        }
+      };
+
       this.recognition.onerror = (event: any) => {
         console.error('Speech recognition error', event.error);
-        if (event.error !== 'no-speech') {
-          this.callbacks.onStateChange(ConnectionState.ERROR);
+        if (event.error === 'no-speech') return;
+
+        let msg = 'An unexpected speech recognition error occurred.';
+        if (event.error === 'not-allowed') {
+          msg = 'Microphone access is blocked. Please click the camera/mic icon in the browser address bar and grant access to continue.';
+        } else if (event.error === 'network') {
+          msg = 'Speech recognition failed due to a network issue. Some browsers require internet to process speech recognition. Try Google Chrome or Microsoft Edge.';
+        } else if (event.error === 'audio-capture') {
+          msg = 'No microphone was detected. Connect an input device and try again.';
+        } else if (event.error === 'language-not-supported') {
+          msg = 'Tutor speech recognition failed because the selected language is not supported by your browser\'s voice engine.';
+        } else if (event.error) {
+          msg = `Speech recognition error: ${event.error}`;
         }
+        
+        this.callbacks.onStateChange(ConnectionState.ERROR, msg);
       };
     }
   }
@@ -118,9 +166,7 @@ export class LocalLiveClient {
       // Give it a moment to speak then disconnect
       setTimeout(() => {
         if (this.isConnected) {
-          // We can't call handleStop directly here as it's in App.tsx
-          // But we can trigger a state change or just let the user click
-          // Actually, a better way is to provide a callback for auto-stop
+          this.callbacks.onAutoStop?.();
         }
       }, 3000);
       return;
@@ -158,14 +204,30 @@ export class LocalLiveClient {
       timestamp: Date.now()
     });
 
-    const utterance = new SpeechSynthesisUtterance(text);
+    const spokenText = sanitizeTTS(text);
+    const utterance = new SpeechSynthesisUtterance(spokenText);
     utterance.lang = this.languageCode === 'GERMAN' ? 'de-DE' : 'en-US';
     
     utterance.onstart = () => {
+      this.isAISpeaking = true;
       this.callbacks.onAudioLevel(0.8, 'ai');
     };
     
     utterance.onend = () => {
+      this.isAISpeaking = false;
+      this.callbacks.onAudioLevel(0, 'ai');
+      // Ensure microphone continues listening after AI finishes speaking
+      if (this.isConnected && this.recognition) {
+        try {
+          this.recognition.start();
+        } catch (e) {
+          // Already listening
+        }
+      }
+    };
+
+    utterance.onerror = () => {
+      this.isAISpeaking = false;
       this.callbacks.onAudioLevel(0, 'ai');
     };
 
