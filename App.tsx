@@ -17,6 +17,7 @@ import WelcomeModal from './components/WelcomeModal';
 import TrainingSession from './components/TrainingSession';
 import ScenarioSelector from './components/ScenarioSelector';
 import BriefkastenModal from './components/BriefkastenModal';
+import MicDiagnosticModal from './components/MicDiagnosticModal';
 import { SCENARIOS, Scenario } from './constants/scenarios';
 import { addGrammarCorrectionsFromSession } from './services/srsService';
 import { generatePersonalizedTraining, TrainingExercise } from './services/trainingService';
@@ -69,9 +70,10 @@ const App: React.FC = () => {
   const [timeLeft, setTimeLeft] = useState(SESSION_DURATION_SECONDS);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   
-  // Scenario & Briefkasten State
+  // Scenario, Briefkasten & Mic State
   const [selectedScenario, setSelectedScenario] = useState<Scenario>(SCENARIOS[0]);
   const [isBriefkastenOpen, setIsBriefkastenOpen] = useState(false);
+  const [isMicDiagnosticOpen, setIsMicDiagnosticOpen] = useState(false);
   const [customInstruction, setCustomInstruction] = useState<string | null>(null);
   const [activeScenarioTitle, setActiveScenarioTitle] = useState<string | null>(null);
 
@@ -339,6 +341,16 @@ const App: React.FC = () => {
                   <span>Briefkasten</span>
                 </button>
 
+                <button
+                  type="button"
+                  onClick={() => setIsMicDiagnosticOpen(true)}
+                  className="bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold text-xs px-3.5 py-1.5 rounded-full transition-colors flex items-center space-x-1.5 shadow-2xs"
+                  title="Test microphone and audio hardware"
+                >
+                  <span>🎙️</span>
+                  <span>Mic Check</span>
+                </button>
+
                 {/* Timer Display */}
                 <div className="flex items-center space-x-3 bg-gray-100 rounded-full px-4 py-1.5">
                     <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" style={{ opacity: isTimerRunning ? 1 : 0 }}></div>
@@ -567,6 +579,10 @@ const App: React.FC = () => {
         onClose={() => setIsBriefkastenOpen(false)}
         aiProvider={aiProviderRef.current}
         onStartScenarioCall={handleStartBriefkastenCall}
+      />
+      <MicDiagnosticModal
+        isOpen={isMicDiagnosticOpen}
+        onClose={() => setIsMicDiagnosticOpen(false)}
       />
       <WelcomeModal />
     </div>

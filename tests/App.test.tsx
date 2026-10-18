@@ -64,7 +64,7 @@ describe('App UAT', () => {
     expect(screen.getByText(/Google Gemini/i)).toBeInTheDocument();
     // Use getAllByText because 'Ollama' appears in the modal too
     expect(screen.getAllByText(/Ollama/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Everyday Sentences/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Everyday/i).length).toBeGreaterThan(0);
   });
 
   it('allows selecting a provider', () => {
@@ -104,6 +104,28 @@ describe('App UAT', () => {
     const closeBtn = screen.getByText('✕');
     fireEvent.click(closeBtn);
     expect(screen.queryByText(/German Letter Explainer/i)).not.toBeInTheDocument();
+  });
+
+  it('opens and closes the Mic Diagnostic modal', () => {
+    render(<App />);
+    const micBtn = screen.getByText(/Mic Check/i);
+    expect(micBtn).toBeInTheDocument();
+
+    fireEvent.click(micBtn);
+    expect(screen.getByText(/Audio & Mic Diagnostic/i)).toBeInTheDocument();
+
+    const closeBtn = screen.getByText('✕');
+    fireEvent.click(closeBtn);
+    expect(screen.queryByText(/Audio & Mic Diagnostic/i)).not.toBeInTheDocument();
+  });
+
+  it('allows switching to the Rapid Drill tab and interacting with drills', () => {
+    render(<App />);
+    const drillTabBtn = screen.getByText(/Rapid Drill/i);
+    expect(drillTabBtn).toBeInTheDocument();
+
+    fireEvent.click(drillTabBtn);
+    expect(screen.getByText(/Wähle den richtigen Artikel:/i)).toBeInTheDocument();
   });
 
   it('allows entering a Gemini API Key', () => {

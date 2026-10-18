@@ -1,10 +1,21 @@
 import { ConnectionState, TranscriptionItem } from "../types";
 import { AIProvider } from "./aiProvider";
 
+export function sanitizeTTS(text: string): string {
+  const correctionMatch = text.match(/\[Korrektur:\s*['"`]?(.*?)['"`]?\s*->\s*['"`]?(.*?)['"`]?\s*\|\s*(.*?)\]/i);
+  let cleaned = text;
+  if (correctionMatch) {
+    const [, , correct] = correctionMatch;
+    cleaned = text.replace(correctionMatch[0], `Merke: ${correct}. `).trim();
+  }
+  return cleaned.replace(/[*#_`]/g, '').trim();
+}
+
 export class LocalLiveClient {
   private recognition: any | null = null;
   private synthesis: SpeechSynthesis = window.speechSynthesis;
   private isConnected: boolean = false;
+  private isAISpeaking: boolean = false;
   private conversationHistory: { role: 'user' | 'assistant', content: string }[] = [];
 
   constructor(
@@ -46,6 +57,9 @@ export class LocalLiveClient {
       this.recognition.lang = this.languageCode === 'GERMAN' ? 'de-DE' : 'en-US';
 
       this.recognition.onresult = (event: any) => {
+        // Echo suppression: Ignore mic buffer while AI speech synthesis is playing
+        if (this.isAISpeaking) return;
+
         let interimTranscript = '';
         let finalTranscript = '';
 
@@ -66,6 +80,17 @@ export class LocalLiveClient {
             isComplete: false,
             timestamp: Date.now()
           });
+        }
+      };
+
+      this.recognition.onend = () => {
+        // Automatically restart listening if session is active and AI is not speaking
+        if (this.isConnected && !this.isAISpeaking) {
+          try {
+            this.recognition.start();
+          } catch (e) {
+            // Already running or starting
+          }
         }
       };
 
@@ -179,14 +204,30 @@ export class LocalLiveClient {
       timestamp: Date.now()
     });
 
-    const utterance = new SpeechSynthesisUtterance(text);
+    const spokenText = sanitizeTTS(text);
+    const utterance = new SpeechSynthesisUtterance(spokenText);
     utterance.lang = this.languageCode === 'GERMAN' ? 'de-DE' : 'en-US';
     
     utterance.onstart = () => {
+      this.isAISpeaking = true;
       this.callbacks.onAudioLevel(0.8, 'ai');
     };
     
     utterance.onend = () => {
+      this.isAISpeaking = false;
+      this.callbacks.onAudioLevel(0, 'ai');
+      // Ensure microphone continues listening after AI finishes speaking
+      if (this.isConnected && this.recognition) {
+        try {
+          this.recognition.start();
+        } catch (e) {
+          // Already listening
+        }
+      }
+    };
+
+    utterance.onerror = () => {
+      this.isAISpeaking = false;
       this.callbacks.onAudioLevel(0, 'ai');
     };
 

@@ -1,8 +1,11 @@
-import React from 'react';
-import { getProgress } from '../utils/progressUtils';
+import React, { useState, useRef } from 'react';
+import { getProgress, downloadSovereignBackup, importSovereignData } from '../utils/progressUtils';
 import { getFlashcards, getDueCards } from '../services/srsService';
 
 const ProgressDashboard: React.FC = () => {
+  const [importMessage, setImportMessage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const progress = getProgress();
   const flashcards = getFlashcards();
   const dueCards = getDueCards();
@@ -28,6 +31,19 @@ const ProgressDashboard: React.FC = () => {
     if (avg >= 7.0) return 'B1 (Intermediate)';
     if (avg >= 5.0) return 'A2 (Elementary)';
     return 'A1 (Beginner)';
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      const res = importSovereignData(text);
+      setImportMessage(res.message);
+      setTimeout(() => setImportMessage(null), 5000);
+    };
+    reader.readAsText(file);
   };
 
   return (
@@ -97,6 +113,43 @@ const ProgressDashboard: React.FC = () => {
           ))}
         </div>
       )}
+
+      {/* Sovereign Data Portability Card */}
+      <div className="pt-4 border-t border-gray-100 flex flex-col space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+            <span>🛡️</span> Sovereign Backup
+          </span>
+          <div className="flex space-x-2">
+            <button
+              onClick={downloadSovereignBackup}
+              className="text-[11px] font-bold bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-1 rounded-xl transition-colors flex items-center space-x-1"
+              title="Download full JSON backup of sessions and cards"
+            >
+              <span>💾 Export</span>
+            </button>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="text-[11px] font-bold bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-1 rounded-xl transition-colors flex items-center space-x-1"
+              title="Restore previous backup"
+            >
+              <span>📥 Import</span>
+            </button>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              accept=".json"
+              className="hidden"
+            />
+          </div>
+        </div>
+        {importMessage && (
+          <p className="text-xs text-green-700 bg-green-50 p-2 rounded-xl border border-green-200 text-center font-medium animate-in fade-in duration-200">
+            {importMessage}
+          </p>
+        )}
+      </div>
     </div>
   );
 };

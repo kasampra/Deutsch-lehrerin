@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { EVERYDAY_SENTENCES } from '../constants';
+import { GRAMMAR_DRILLS } from '../constants/grammarDrills';
 import {
   getDueCards,
   getFlashcards,
@@ -54,7 +55,7 @@ function levenshteinDistance(a: string, b: string): number {
 }
 
 const DailyPractice: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'srs' | 'everyday'>('srs');
+  const [activeTab, setActiveTab] = useState<'srs' | 'everyday' | 'drill'>('srs');
   
   // Everyday Sentences State
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -66,6 +67,12 @@ const DailyPractice: React.FC = () => {
   const [dueCards, setDueCards] = useState<Flashcard[]>([]);
   const [srsIndex, setSrsIndex] = useState(0);
   const [isCardFlipped, setIsCardFlipped] = useState(false);
+
+  // Grammar Drill State
+  const [drillIndex, setDrillIndex] = useState(0);
+  const [selectedDrillOption, setSelectedDrillOption] = useState<string | null>(null);
+  const [isDrillAnswered, setIsDrillAnswered] = useState(false);
+  const [drillStreak, setDrillStreak] = useState(0);
 
   useEffect(() => {
     seedInitialCardsIfEmpty();
@@ -145,16 +152,36 @@ const DailyPractice: React.FC = () => {
     }
   };
 
+  const currentDrill = GRAMMAR_DRILLS[drillIndex];
+
+  const handleDrillAnswer = (option: string) => {
+    if (isDrillAnswered) return;
+    setSelectedDrillOption(option);
+    setIsDrillAnswered(true);
+
+    if (option === currentDrill.correctAnswer) {
+      setDrillStreak(prev => prev + 1);
+    } else {
+      setDrillStreak(0);
+    }
+  };
+
+  const nextDrill = () => {
+    setDrillIndex(prev => (prev + 1) % GRAMMAR_DRILLS.length);
+    setSelectedDrillOption(null);
+    setIsDrillAnswered(false);
+  };
+
   const totalCardsCount = getFlashcards().length;
 
   return (
     <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6">
       {/* Tabs */}
       <div className="flex items-center justify-between border-b border-gray-100 pb-4 mb-6">
-        <div className="flex space-x-2">
+        <div className="flex space-x-2 overflow-x-auto">
           <button
             onClick={() => { setActiveTab('srs'); setFeedback(null); }}
-            className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all flex items-center space-x-1.5 ${
+            className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all flex items-center space-x-1.5 whitespace-nowrap ${
               activeTab === 'srs'
                 ? 'bg-black text-white shadow-xs'
                 : 'text-gray-500 hover:text-gray-900 bg-gray-50'
@@ -170,19 +197,34 @@ const DailyPractice: React.FC = () => {
             )}
           </button>
           <button
+            onClick={() => { setActiveTab('drill'); setFeedback(null); }}
+            className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all flex items-center space-x-1.5 whitespace-nowrap ${
+              activeTab === 'drill'
+                ? 'bg-black text-white shadow-xs'
+                : 'text-gray-500 hover:text-gray-900 bg-gray-50'
+            }`}
+          >
+            <span>⚡ Rapid Drill</span>
+            {drillStreak > 0 && (
+              <span className="text-[10px] bg-amber-400 text-black px-1.5 rounded-full font-extrabold">
+                🔥 {drillStreak}
+              </span>
+            )}
+          </button>
+          <button
             onClick={() => { setActiveTab('everyday'); setFeedback(null); }}
-            className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
+            className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
               activeTab === 'everyday'
                 ? 'bg-black text-white shadow-xs'
                 : 'text-gray-500 hover:text-gray-900 bg-gray-50'
             }`}
           >
-            <span>💬 Everyday Sentences</span>
+            <span>💬 Everyday</span>
           </button>
         </div>
 
-        <span className="text-[10px] text-gray-400 font-medium">
-          {activeTab === 'srs' ? `${totalCardsCount} cards total` : currentEveryday.category}
+        <span className="text-[10px] text-gray-400 font-medium whitespace-nowrap ml-2">
+          {activeTab === 'srs' ? `${totalCardsCount} cards` : activeTab === 'drill' ? `Streak: ${drillStreak}` : currentEveryday.category}
         </span>
       </div>
 
@@ -378,6 +420,78 @@ const DailyPractice: React.FC = () => {
               />
             ))}
           </div>
+        </div>
+      )}
+
+      {/* TAB 3: RAPID GRAMMAR DRILL */}
+      {activeTab === 'drill' && (
+        <div className="space-y-5 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between text-xs text-gray-500">
+            <span className="font-bold text-[10px] uppercase tracking-wider bg-purple-50 text-purple-700 px-2.5 py-0.5 rounded-full border border-purple-100">
+              {currentDrill.type === 'article' ? 'Der / Die / Das' : 'Fall & Präposition'}
+            </span>
+            <span>Drill {drillIndex + 1} of {GRAMMAR_DRILLS.length}</span>
+          </div>
+
+          <div className="text-center py-4 bg-gray-50/70 border border-gray-100 rounded-2xl p-5 space-y-2">
+            <p className="text-xs text-gray-500 font-medium">{currentDrill.prompt}</p>
+            <p className="text-2xl font-black text-gray-900 tracking-tight">
+              {currentDrill.wordOrSentence}
+            </p>
+          </div>
+
+          {/* Options */}
+          <div className="grid grid-cols-3 gap-2">
+            {currentDrill.options.map((opt) => {
+              const isSelected = selectedDrillOption === opt;
+              const isCorrect = opt === currentDrill.correctAnswer;
+              
+              let btnClass = 'bg-gray-50 text-gray-800 border-gray-200 hover:bg-gray-100';
+              if (isDrillAnswered) {
+                if (isCorrect) {
+                  btnClass = 'bg-green-500 text-white border-green-600 font-black shadow-md';
+                } else if (isSelected) {
+                  btnClass = 'bg-red-500 text-white border-red-600 line-through';
+                } else {
+                  btnClass = 'bg-gray-50 text-gray-400 border-gray-100 opacity-50';
+                }
+              }
+
+              return (
+                <button
+                  key={opt}
+                  disabled={isDrillAnswered}
+                  onClick={() => handleDrillAnswer(opt)}
+                  className={`py-3.5 px-2 rounded-xl text-sm font-bold border transition-all ${btnClass}`}
+                >
+                  {opt}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Answer Explanation & Next Button */}
+          {isDrillAnswered && (
+            <div className="space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
+              <div className={`p-3 rounded-xl border text-xs leading-relaxed ${
+                selectedDrillOption === currentDrill.correctAnswer
+                  ? 'bg-green-50 border-green-100 text-green-900'
+                  : 'bg-red-50 border-red-100 text-red-900'
+              }`}>
+                <p className="font-bold mb-0.5">
+                  {selectedDrillOption === currentDrill.correctAnswer ? '🎉 Richtig!' : `❌ Leider falsch. Richtig ist: "${currentDrill.correctAnswer}"`}
+                </p>
+                <p className="text-[11px]">{currentDrill.explanation}</p>
+              </div>
+
+              <button
+                onClick={nextDrill}
+                className="w-full bg-black text-white py-3 rounded-xl text-xs font-bold hover:bg-gray-800 transition-all shadow-xs"
+              >
+                Next Drill →
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
