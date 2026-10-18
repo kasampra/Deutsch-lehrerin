@@ -39,6 +39,21 @@ const mockSpeechRecognition = vi.fn().mockImplementation(function(this: any) {
 describe('App UAT', () => {
   beforeEach(() => {
     localStorage.clear();
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/tags')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ models: [{ name: 'qwen2.5:7b' }, { name: 'llama3:8b' }] }),
+        });
+      }
+      if (url.includes('/v1/models')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ data: [{ id: 'qwen2.5-7b-instruct' }] }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    }) as any;
   });
 
   it('renders correctly and shows language and provider selectors', () => {
@@ -62,9 +77,33 @@ describe('App UAT', () => {
 
     expect(ollamaButton).toBeInTheDocument();
   });
-  it('shows the start button for conversation', () => {
+  it('shows the start button for conversation with selected scenario', () => {
     render(<App />);
-    expect(screen.getByText(/Start Conversation/i)).toBeInTheDocument();
+    expect(screen.getByText(/Start: Freies Gespräch/i)).toBeInTheDocument();
+  });
+
+  it('renders the Scenario Lab and allows picking a scenario', () => {
+    render(<App />);
+    expect(screen.getByText(/Scenario Lab/i)).toBeInTheDocument();
+    expect(screen.getByText(/Bürgeramt Anmeldung/i)).toBeInTheDocument();
+
+    const buergeramtBtn = screen.getByText(/Bürgeramt Anmeldung/i);
+    fireEvent.click(buergeramtBtn);
+
+    expect(screen.getByText(/Start: Bürgeramt Anmeldung/i)).toBeInTheDocument();
+  });
+
+  it('opens and closes the Briefkasten modal', () => {
+    render(<App />);
+    const briefkastenBtn = screen.getByText(/Briefkasten/i);
+    expect(briefkastenBtn).toBeInTheDocument();
+
+    fireEvent.click(briefkastenBtn);
+    expect(screen.getByText(/German Letter Explainer/i)).toBeInTheDocument();
+
+    const closeBtn = screen.getByText('✕');
+    fireEvent.click(closeBtn);
+    expect(screen.queryByText(/German Letter Explainer/i)).not.toBeInTheDocument();
   });
 
   it('allows entering a Gemini API Key', () => {

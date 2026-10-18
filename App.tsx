@@ -15,6 +15,10 @@ import DailyPractice from './components/DailyPractice';
 import ProgressDashboard from './components/ProgressDashboard';
 import WelcomeModal from './components/WelcomeModal';
 import TrainingSession from './components/TrainingSession';
+import ScenarioSelector from './components/ScenarioSelector';
+import BriefkastenModal from './components/BriefkastenModal';
+import { SCENARIOS, Scenario } from './constants/scenarios';
+import { addGrammarCorrectionsFromSession } from './services/srsService';
 import { generatePersonalizedTraining, TrainingExercise } from './services/trainingService';
 
 const SESSION_DURATION_SECONDS = 15 * 60; // 15 minutes
@@ -65,6 +69,12 @@ const App: React.FC = () => {
   const [timeLeft, setTimeLeft] = useState(SESSION_DURATION_SECONDS);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   
+  // Scenario & Briefkasten State
+  const [selectedScenario, setSelectedScenario] = useState<Scenario>(SCENARIOS[0]);
+  const [isBriefkastenOpen, setIsBriefkastenOpen] = useState(false);
+  const [customInstruction, setCustomInstruction] = useState<string | null>(null);
+  const [activeScenarioTitle, setActiveScenarioTitle] = useState<string | null>(null);
+
   // Feedback State
   const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false);
   const [feedbackReport, setFeedbackReport] = useState<FeedbackReport | null>(null);
@@ -112,6 +122,11 @@ const App: React.FC = () => {
 
     const duration = SESSION_DURATION_SECONDS - timeLeftRef.current;
     const currentTranscripts = transcriptsRef.current;
+
+    // Automatically extract grammar mistakes from conversation and save to SRS review deck
+    if (currentTranscripts.length > 0) {
+      addGrammarCorrectionsFromSession(currentTranscripts);
+    }
 
     // Trigger Feedback Generation if there is enough conversation
     if (currentTranscripts.length > 2) {
@@ -187,11 +202,17 @@ const App: React.FC = () => {
       }
     };
 
+    const activeSystemInstruction =
+      customInstruction ||
+      (selectedLanguage.code === Language.GERMAN
+        ? selectedScenario.systemInstruction
+        : selectedLanguage.systemInstruction);
+
     if (selectedProvider === ProviderType.GEMINI) {
       if (apiKey) {
         liveClientRef.current = new LiveClient(
           apiKey,
-          selectedLanguage.systemInstruction,
+          activeSystemInstruction,
           tutorStrictness,
           selectedLanguage.voiceName,
           callbacks
@@ -202,7 +223,7 @@ const App: React.FC = () => {
     } else if (aiProviderRef.current) {
       liveClientRef.current = new LocalLiveClient(
         aiProviderRef.current,
-        selectedLanguage.systemInstruction,
+        activeSystemInstruction,
         tutorStrictness,
         selectedLanguage.code,
         selectedLanguage.voiceName,
@@ -214,7 +235,7 @@ const App: React.FC = () => {
       liveClientRef.current?.disconnect();
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [selectedLanguage, selectedProvider, tutorStrictness, selectedModel, geminiApiKey]);
+  }, [selectedLanguage, selectedProvider, tutorStrictness, selectedModel, geminiApiKey, selectedScenario, customInstruction]);
 
   // Timer Logic
   useEffect(() => {
@@ -266,6 +287,24 @@ const App: React.FC = () => {
       setTrainingExercises(null);
       setTranscripts([]);
       setTimeLeft(SESSION_DURATION_SECONDS);
+      setCustomInstruction(null);
+      setActiveScenarioTitle(null);
+  };
+
+  const handleStartBriefkastenCall = (roleplayInstruction: string, title: string) => {
+    setCustomInstruction(roleplayInstruction);
+    setActiveScenarioTitle(title);
+    setTimeout(async () => {
+      if (liveClientRef.current) {
+        setConnectionError(null);
+        setTranscripts([]);
+        setFeedbackReport(null);
+        setTrainingExercises(null);
+        setTimeLeft(SESSION_DURATION_SECONDS);
+        await liveClientRef.current.connect();
+        setIsTimerRunning(true);
+      }
+    }, 150);
   };
 
   const formatTime = (seconds: number) => {
@@ -288,12 +327,25 @@ const App: React.FC = () => {
                 </h1>
             </div>
             
-            {/* Timer Display */}
-            <div className="flex items-center space-x-4 bg-gray-100 rounded-full px-4 py-1.5">
-                <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" style={{ opacity: isTimerRunning ? 1 : 0 }}></div>
-                <span className={`font-mono font-medium ${timeLeft < 60 ? 'text-red-600' : 'text-gray-700'}`}>
-                    {formatTime(timeLeft)}
-                </span>
+            {/* Header Right Actions */}
+            <div className="flex items-center space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setIsBriefkastenOpen(true)}
+                  className="bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/70 font-bold text-xs px-3.5 py-1.5 rounded-full transition-colors flex items-center space-x-1.5 shadow-2xs"
+                  title="Decode German official mail"
+                >
+                  <span>📬</span>
+                  <span>Briefkasten</span>
+                </button>
+
+                {/* Timer Display */}
+                <div className="flex items-center space-x-3 bg-gray-100 rounded-full px-4 py-1.5">
+                    <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" style={{ opacity: isTimerRunning ? 1 : 0 }}></div>
+                    <span className={`font-mono font-medium text-sm ${timeLeft < 60 ? 'text-red-600' : 'text-gray-700'}`}>
+                        {formatTime(timeLeft)}
+                    </span>
+                </div>
             </div>
         </div>
         <div className="h-1 bg-gray-100 w-full">
@@ -339,8 +391,24 @@ const App: React.FC = () => {
                               />
                             </div>
 
-                            <div>
-                              <h2 className="text-lg font-bold text-center mb-4 text-gray-900">2. Choose Your AI Brain</h2>
+                            {selectedLanguage.code === Language.GERMAN && (
+                              <div className="pt-4 border-t border-gray-50">
+                                <ScenarioSelector
+                                  selected={selectedScenario}
+                                  onSelect={(sc) => {
+                                    setSelectedScenario(sc);
+                                    setCustomInstruction(null);
+                                    setActiveScenarioTitle(null);
+                                  }}
+                                  disabled={connectionState !== ConnectionState.DISCONNECTED}
+                                />
+                              </div>
+                            )}
+
+                            <div className="pt-4 border-t border-gray-50">
+                              <h2 className="text-lg font-bold text-center mb-4 text-gray-900">
+                                {selectedLanguage.code === Language.GERMAN ? '3. Choose Your AI Brain' : '2. Choose Your AI Brain'}
+                              </h2>
                               <ProviderSelector 
                                 selected={selectedProvider}
                                 onSelect={setSelectedProvider}
@@ -389,7 +457,13 @@ const App: React.FC = () => {
                                   className="w-full bg-black text-white py-4 rounded-2xl font-bold hover:bg-gray-800 transition-all active:scale-[0.98] shadow-lg flex items-center justify-center space-x-2 text-base"
                               >
                                   <span>🚀</span>
-                                  <span>Start Conversation</span>
+                                  <span>
+                                    {activeScenarioTitle 
+                                      ? `Start: ${activeScenarioTitle}` 
+                                      : selectedLanguage.code === Language.GERMAN
+                                      ? `Start: ${selectedScenario.title}`
+                                      : 'Start Conversation'}
+                                  </span>
                               </button>
                             </div>
                           </div>
@@ -488,6 +562,12 @@ const App: React.FC = () => {
 
         </div>
       </main>
+      <BriefkastenModal
+        isOpen={isBriefkastenOpen}
+        onClose={() => setIsBriefkastenOpen(false)}
+        aiProvider={aiProviderRef.current}
+        onStartScenarioCall={handleStartBriefkastenCall}
+      />
       <WelcomeModal />
     </div>
   );
